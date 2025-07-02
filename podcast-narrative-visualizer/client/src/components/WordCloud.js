@@ -3,6 +3,27 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
 import { forceSimulation as d3ForceSimulation, forceLink, forceManyBody, forceCenter } from 'd3-force-3d';
 
+// Helper function to get color based on importance
+function getNodeColor(node, hoveredNode) {
+  // If something is hovered, use hover logic
+  if (hoveredNode) {
+    if (hoveredNode.id === node.id) {
+      return '#ff6b35'; // Bright orange for hovered node
+    } else if (!node.neighbors.has(hoveredNode.id)) {
+      return '#cccccc'; // Grey for unrelated nodes
+    } else {
+      return '#4ecdc4'; // Teal for neighbors
+    }
+  }
+  
+  // Default colors based on importance (when nothing is hovered)
+  const importance = node.size || 5; // Default to 5 if no size
+  if (importance >= 8) return '#e74c3c'; // High importance: red
+  if (importance >= 6) return '#f39c12'; // Medium-high importance: orange
+  if (importance >= 4) return '#3498db'; // Medium importance: blue
+  return '#2ecc71'; // Low importance: green
+}
+
 // This component now ONLY handles the visual representation.
 // It is "dumb" and simply receives props.
 function Word({ node, color, setSelectedNode }) {
@@ -34,16 +55,7 @@ function Node({ node, hoveredNode, setSelectedNode }) {
     }
   });
 
-  // --- THIS IS THE CORRECTED COLOR LOGIC ---
-  let color = '#000000'; // Default to black
-  if (hoveredNode) { // Only apply special colors IF something is being hovered
-    if (hoveredNode.id === node.id) {
-      color = '#007bff'; // The hovered node itself is blue
-    } else if (!node.neighbors.has(hoveredNode.id)) {
-      color = '#e0e0e0'; // Un-related nodes are faded to grey
-    }
-    // Otherwise, it's a neighbor, so it stays the default black.
-  }
+  const color = getNodeColor(node, hoveredNode);
 
   return (
     <group ref={ref}>
@@ -66,7 +78,7 @@ function WordCloud({ data, setSelectedNode }) {
       z: node.position[2],
       ...node
     }));
-    const edges = data.edges.map(edge => ({ source: edge.from, target: edge.to }));
+    const edges = data.edges.map(edge => ({ source: edge.from, target: edge.to, similarity: edge.similarity || 0.5 }));
 
     nodes.forEach(node => {
       node.neighbors = new Set([node.id]);
@@ -111,21 +123,42 @@ function WordCloud({ data, setSelectedNode }) {
           const endNode = graph.nodes[edge.target];
           if (!startNode || !endNode) return null;
           
-          const isVisible = hoveredNode && (startNode.id === hoveredNode.id || endNode.id === hoveredNode.id);
-          const color = isVisible ? '#007bff' : '#f0f0f0';
+          // Make edges more visible by default
+          let edgeColor = '#bdc3c7'; // Default light grey but visible
+          let lineWidth = 1.5; // Default line width
+          
+          // If hovering, highlight connected edges
+          if (hoveredNode && (startNode.id === hoveredNode.id || endNode.id === hoveredNode.id)) {
+            edgeColor = '#34495e'; // Dark grey for highlighted edges
+            lineWidth = 3;
+          }
+          
+          // Optional: Color edges by similarity strength
+          if (edge.similarity) {
+            const alpha = Math.max(0.3, edge.similarity); // Minimum visibility
+            const intensity = Math.floor(255 * alpha);
+            edgeColor = `rgb(${160}, ${160}, ${intensity})`; // Blue-ish based on similarity
+          }
 
           return (
             <Line
               key={`line-${i}`}
               points={[[startNode.x, startNode.y, startNode.z], [endNode.x, endNode.y, endNode.z]]}
-              color={color}
-              lineWidth={isVisible ? 3.5 : 2}
+              color={edgeColor}
+              lineWidth={lineWidth}
             />
           );
         })}
       </group>
 
-      <OrbitControls enableZoom={true} enablePan={true} autoRotate={true} autoRotateSpeed={0.3} enableDamping={true} dampingFactor={0.05} />
+      <OrbitControls 
+        enableZoom={true} 
+        enablePan={true} 
+        autoRotate={true} 
+        autoRotateSpeed={0.3} 
+        enableDamping={true} 
+        dampingFactor={0.05} 
+      />
     </Canvas>
   );
 }
