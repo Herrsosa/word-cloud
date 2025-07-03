@@ -107,7 +107,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
         // --- Step 5: Format and Send Response with NODES and EDGES ---
         const nodes = topicData.map((t, i) => ({
             text: t.topic,
-            position: output[i].map(d => d * 8), // Increased scale for better spread
+            position: output[i], // Increased scale for better spread
             size: t.importance 
         }));
         

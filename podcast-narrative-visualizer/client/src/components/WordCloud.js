@@ -3,33 +3,11 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Line } from '@react-three/drei';
 import { forceSimulation as d3ForceSimulation, forceLink, forceManyBody, forceCenter } from 'd3-force-3d';
 
-// Helper function to get color based on importance
-function getNodeColor(node, hoveredNode) {
-  // If something is hovered, use hover logic
-  if (hoveredNode) {
-    if (hoveredNode.id === node.id) {
-      return '#ff6b35'; // Bright orange for hovered node
-    } else if (!node.neighbors.has(hoveredNode.id)) {
-      return '#cccccc'; // Grey for unrelated nodes
-    } else {
-      return '#4ecdc4'; // Teal for neighbors
-    }
-  }
-  
-  // Default colors based on importance (when nothing is hovered)
-  const importance = node.size || 5; // Default to 5 if no size
-  if (importance >= 8) return '#e74c3c'; // High importance: red
-  if (importance >= 6) return '#f39c12'; // Medium-high importance: orange
-  if (importance >= 4) return '#3498db'; // Medium importance: blue
-  return '#2ecc71'; // Low importance: green
-}
-
-// This component now ONLY handles the visual representation.
-// It is "dumb" and simply receives props.
 function Word({ node, color, setSelectedNode }) {
+  // --- FIX: Adjusted font size for the new, smaller scale ---
   const fontProps = {
     font: '/Inter_18pt-Bold.ttf',
-    fontSize: 0.5 + (node.size / 10) * 1.2,
+    fontSize: 0.15 + (node.size / 10) * 0.25,
     'material-toneMapped': false,
   };
   return (
@@ -44,18 +22,19 @@ function Word({ node, color, setSelectedNode }) {
   );
 }
 
-// This is a new component that manages its own position AND color logic.
 function Node({ node, hoveredNode, setSelectedNode }) {
   const ref = useRef();
-  
-  // On every frame, update the position of this node's group from the simulation
   useFrame(() => {
     if (ref.current) {
       ref.current.position.set(node.x, node.y, node.z);
     }
   });
 
-  const color = getNodeColor(node, hoveredNode);
+  let color = '#000000'; // Default black
+  if (hoveredNode) {
+    if (hoveredNode.id === node.id) color = '#007bff'; // Highlighted
+    else if (!node.neighbors.has(hoveredNode.id)) color = '#e0e0e0'; // Faded
+  }
 
   return (
     <group ref={ref}>
@@ -64,7 +43,6 @@ function Node({ node, hoveredNode, setSelectedNode }) {
   );
 }
 
-// --- Main WordCloud Component ---
 function WordCloud({ data, setSelectedNode }) {
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
@@ -73,16 +51,12 @@ function WordCloud({ data, setSelectedNode }) {
 
     const nodes = data.nodes.map((node, i) => ({
       id: i,
-      x: node.position[0],
-      y: node.position[1],
-      z: node.position[2],
+      x: node.position[0], y: node.position[1], z: node.position[2],
       ...node
     }));
-    const edges = data.edges.map(edge => ({ source: edge.from, target: edge.to, similarity: edge.similarity || 0.5 }));
+    const edges = data.edges.map(edge => ({ source: edge.from, target: edge.to }));
 
-    nodes.forEach(node => {
-      node.neighbors = new Set([node.id]);
-    });
+    nodes.forEach(node => { node.neighbors = new Set([node.id]); });
     edges.forEach(edge => {
       if (nodes[edge.source] && nodes[edge.target]) {
         nodes[edge.source].neighbors.add(nodes[edge.target].id);
@@ -90,11 +64,11 @@ function WordCloud({ data, setSelectedNode }) {
       }
     });
 
+    // --- FIX: Re-tuned forces for a compact layout at a smaller scale ---
     const simulation = d3ForceSimulation(nodes, 3)
-      .force('link', forceLink(edges).id(d => d.id).strength(0.4).distance(6))
-      .force('charge', forceManyBody().strength(-40))
-      .force('center', forceCenter().strength(1.2))
-      .alpha(1.5).alphaDecay(0.0228)
+      .force('link', forceLink(edges).id(d => d.id).strength(0.5).distance(1.5))
+      .force('charge', forceManyBody().strength(-2.5)) // Gentle repulsion
+      .force('center', forceCenter().strength(0.8))
       .on('end', () => console.log("Simulation settled."));
 
     return { nodes, edges, simulation };
@@ -107,7 +81,8 @@ function WordCloud({ data, setSelectedNode }) {
   if (!graph) return null;
 
   return (
-    <Canvas camera={{ position: [0, 0, 35], fov: 75 }}>
+    // --- FIX: Camera moved much closer for the new scale ---
+    <Canvas camera={{ position: [0, 0, 12], fov: 50 }}>
       <color attach="background" args={['#ffffff']} />
       <ambientLight intensity={1.0} />
       <directionalLight position={[5, 5, 15]} intensity={0.8} />
@@ -123,42 +98,24 @@ function WordCloud({ data, setSelectedNode }) {
           const endNode = graph.nodes[edge.target];
           if (!startNode || !endNode) return null;
           
-          // Make edges more visible by default
-          let edgeColor = '#bdc3c7'; // Default light grey but visible
-          let lineWidth = 1.5; // Default line width
+          const isVisible = hoveredNode && (startNode.id === hoveredNode.id || endNode.id === hoveredNode.id);
           
-          // If hovering, highlight connected edges
-          if (hoveredNode && (startNode.id === hoveredNode.id || endNode.id === hoveredNode.id)) {
-            edgeColor = '#34495e'; // Dark grey for highlighted edges
-            lineWidth = 3;
-          }
-          
-          // Optional: Color edges by similarity strength
-          if (edge.similarity) {
-            const alpha = Math.max(0.3, edge.similarity); // Minimum visibility
-            const intensity = Math.floor(255 * alpha);
-            edgeColor = `rgb(${160}, ${160}, ${intensity})`; // Blue-ish based on similarity
-          }
+          // --- FIX: Darker default color for visible edges ---
+          const color = isVisible ? '#007bff' : '#cccccc';
+          const lineWidth = isVisible ? 2 : 1;
 
           return (
             <Line
               key={`line-${i}`}
               points={[[startNode.x, startNode.y, startNode.z], [endNode.x, endNode.y, endNode.z]]}
-              color={edgeColor}
+              color={color}
               lineWidth={lineWidth}
             />
           );
         })}
       </group>
 
-      <OrbitControls 
-        enableZoom={true} 
-        enablePan={true} 
-        autoRotate={true} 
-        autoRotateSpeed={0.3} 
-        enableDamping={true} 
-        dampingFactor={0.05} 
-      />
+      <OrbitControls enableZoom={true} enablePan={true} autoRotate={true} autoRotateSpeed={0.4} enableDamping={true} dampingFactor={0.05} />
     </Canvas>
   );
 }
